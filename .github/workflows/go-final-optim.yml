@@ -1,0 +1,54 @@
+name: Go Optimized Workflow
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Shared CI steps, like linting, formatting etc.
+  common:
+    uses: ./.github/workflows/go_ci_common_tasks.yml
+
+  # Matrix-powered build and test across OS + Go versions
+  build-and-test:
+    needs: common
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04]
+        go-version: ['1.20', '1.21']
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+    - name: Cache Go Modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+    - name: Build
+      run: go build -v ./...
+    - name: Test
+      run: go test -v ./...
+
+  # Deploy job that only triggers on master push
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+    - uses: actions/checkout@v3
+    - name: Deploy
+      run: |
+        echo "Deploying to production..."
